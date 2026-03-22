@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIDEO PARTICLES</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+
+  #canvas-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  canvas {
+    display: block;
+  }
+
+  /* Hidden video for sampling */
+  #video {
+    display: none;
+  }
+
+  /* UI overlay */
+  #ui {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Upload screen */
+  #upload-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    z-index: 100;
+    cursor: pointer;
+    transition: opacity 0.6s ease;
+  }
+
+  #upload-screen.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .upload-border {
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 60px 80px;
+    text-align: center;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+
+  #upload-screen:hover .upload-border {
+    border-color: rgba(255,255,255,0.4);
+  }
+
+  .upload-border::before,
+  .upload-border::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: #fff;
+    border-style: solid;
+  }
+  .upload-border::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+  .upload-border::after  { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+  .upload-title {
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.3);
+    margin-bottom: 32px;
+  }
+
+  .upload-icon {
+    font-size: 48px;
+    margin-bottom: 24px;
+    opacity: 0.6;
+  }
+
+  .upload-main {
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+    color: rgba(255,255,255,0.9);
+  }
+
+  .upload-sub {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: rgba(255,255,255,0.25);
+  }
+
+  #file-input {
+    display: none;
+  }
+
+  /* Controls bar */
+  #controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    pointer-events: all;
+    opacity: 0;
+    transition: opacity 0.4s;
+    z-index: 20;
+  }
+
+  #controls.visible {
+    opacity: 1;
+  }
+
+  .ctrl-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .ctrl-btn:hover {
+    border-color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.05);
+  }
+
+  .ctrl-label {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    height: 1px;
+    background: rgba(255,255,255,0.2);
+    outline: none;
+    flex: 1;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  /* Top info */
+  #info {
+    position: fixed;
+    top: 24px;
+    left: 32px;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  #info.visible {
+    opacity: 1;
+  }
+
+  .info-title {
+    font-size: 10px;
+    letter-spacing: 0.4em;
+    color: rgba(255,255,255,0.2);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .info-stat {
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: rgba(255,255,255,0.4);
+  }
+
+  /* Depth slider */
+  .slider-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+  }
+
+  /* Top right hint */
+  #hint {
+    position: fixed;
+    top: 24px;
+    right: 32px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: rgba(255,255,255,0.15);
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.4s;
+    text-align: right;
+    line-height: 2;
+  }
+
+  #hint.visible { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="upload-screen">
+  <div class="upload-border">
+    <div class="upload-title">Video Particle System</div>
+    <div class="upload-icon">⬡</div>
+    <div class="upload-main">動画をドロップ / クリックして選択</div>
+    <div class="upload-sub">MP4 · MOV · WEBM</div>
+  </div>
+  <input type="file" id="file-input" accept="video/*">
+</div>
+
+<div id="canvas-container"></div>
+
+<video id="video" loop playsinline crossorigin="anonymous"></video>
+
+<div id="info">
+  <div class="info-title">Particle Field</div>
+  <div class="info-stat" id="stat-particles">— particles</div>
+</div>
+
+<div id="hint">
+  drag · rotate<br>
+  scroll · zoom<br>
+  right drag · pan
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-play">▶</button>
+  <span class="ctrl-label">density</span>
+  <div class="slider-group">
+    <input type="range" id="slider-density" min="1" max="8" value="3" step="1">
+  </div>
+  <span class="ctrl-label">depth</span>
+  <div class="slider-group">
+    <input type="range" id="slider-depth" min="20" max="300" value="100" step="10">
+  </div>
+  <span class="ctrl-label">size</span>
+  <div class="slider-group">
+    <input type="range" id="slider-size" min="0.5" max="4" value="1.5" step="0.1">
+  </div>
+  <button class="ctrl-btn" id="btn-reset" title="Reset camera">⟳</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Three.js setup ───────────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 500);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000);
+container.appendChild(renderer.domElement);
+
+// ─── OrbitControls (inline, r128 compatible) ──────────────────────────────────
+(function() {
+  const _v2 = new THREE.Vector2();
+  const _v3 = new THREE.Vector3();
+  const _spherical = new THREE.Spherical();
+  const _sphericalDelta = new THREE.Spherical();
+  let _scale = 1;
+  const _panOffset = new THREE.Vector3();
+  let _isMouseDown = false;
+  let _mouseButton = -1;
+  const _rotateStart = new THREE.Vector2();
+  const _rotateEnd = new THREE.Vector2();
+  const _rotateDelta = new THREE.Vector2();
+  const _panStart = new THREE.Vector2();
+  const _panEnd = new THREE.Vector2();
+  const _panDelta = new THREE.Vector2();
+  const EPS = 0.000001;
+
+  function getZoomScale() { return Math.pow(0.95, 1); }
+
+  renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+  renderer.domElement.addEventListener('mousedown', e => {
+    _isMouseDown = true;
+    _mouseButton = e.button;
+    if (e.button === 0) _rotateStart.set(e.clientX, e.clientY);
+    if (e.button === 2) _panStart.set(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_isMouseDown) return;
+    if (_mouseButton === 0) {
+      _rotateEnd.set(e.clientX, e.clientY);
+      _rotateDelta.subVectors(_rotateEnd, _rotateStart).multiplyScalar(0.005);
+      _sphericalDelta.theta -= _rotateDelta.x;
+      _sphericalDelta.phi -= _rotateDelta.y;
+      _rotateStart.copy(_rotateEnd);
+    }
+    if (_mouseButton === 2) {
+      _panEnd.set(e.clientX, e.clientY);
+      _panDelta.subVectors(_panEnd, _panStart).multiplyScalar(0.5);
+      const offset = new THREE.Vector3(-_panDelta.x, _panDelta.y, 0);
+      offset.applyQuaternion(camera.quaternion);
+      _panOffset.add(offset);
+      _panStart.copy(_panEnd);
+    }
+  });
+  window.addEventListener('mouseup', () => { _isMouseDown = false; });
+  renderer.domElement.addEventListener('wheel', e => {
+    if (e.deltaY < 0) _scale /= 1.1; else _scale *= 1.1;
+    _scale = Math.max(0.1, Math.min(10, _scale));
+  });
+
+  const _target = new THREE.Vector3();
+  window._orbitUpdate = function() {
+    const offset = new THREE.Vector3();
+    offset.copy(camera.position).sub(_target);
+    _spherical.setFromVector3(offset);
+    _spherical.theta += _sphericalDelta.theta;
+    _spherical.phi += _sphericalDelta.phi;
+    _spherical.phi = Math.max(EPS, Math.min(Math.PI - EPS, _spherical.phi));
+    _spherical.radius *= _scale;
+    _spherical.radius = Math.max(50, Math.min(1500, _spherical.radius));
+    _target.add(_panOffset);
+    offset.setFromSpherical(_spherical);
+    camera.position.copy(_target).add(offset);
+    camera.lookAt(_target);
+    _sphericalDelta.set(0, 0, 0);
+    _scale = 1;
+    _panOffset.set(0, 0, 0);
+  };
+
+  window._resetCamera = function() {
+    camera.position.set(0, 0, 500);
+    _target.set(0, 0, 0);
+    _spherical.setFromVector3(new THREE.Vector3(0, 0, 500));
+    _sphericalDelta.set(0, 0, 0);
+    _scale = 1;
+    _panOffset.set(0, 0, 0);
+  };
+})();
+
+// ─── Video & Canvas sampler ───────────────────────────────────────────────────
+const video = document.getElementById('video');
+const sampleCanvas = document.createElement('canvas');
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
+// ─── Particle system ──────────────────────────────────────────────────────────
+let geometry, points;
+let particleCount = 0;
+let positions, colors, sizes;
+
+// Settings
+let STEP = 3;         // pixel sampling stride (lower = more particles)
+let DEPTH_SCALE = 100; // Z depth from brightness
+let BASE_SIZE = 1.5;
+
+const SAMPLE_W = 320;
+const SAMPLE_H = 180;
+
+function initParticles() {
+  const cols = Math.floor(SAMPLE_W / STEP);
+  const rows = Math.floor(SAMPLE_H / STEP);
+  particleCount = cols * rows;
+
+  document.getElementById('stat-particles').textContent =
+    particleCount.toLocaleString() + ' particles';
+
+  if (geometry) geometry.dispose();
+  if (points) scene.remove(points);
+
+  geometry = new THREE.BufferGeometry();
+  positions = new Float32Array(particleCount * 3);
+  colors = new Float32Array(particleCount * 3);
+  sizes = new Float32Array(particleCount);
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('size',     new THREE.BufferAttribute(sizes, 1));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      attribute float size;
+      attribute vec3 color;
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vColor = color;
+        float brightness = dot(color, vec3(0.299, 0.587, 0.114));
+        vAlpha = brightness;
+
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float dist = length(uv);
+        if (dist > 0.5) discard;
+
+        // Soft glowing dot
+        float core = 1.0 - smoothstep(0.0, 0.25, dist);
+        float halo = 1.0 - smoothstep(0.1, 0.5, dist);
+        float alpha = core * 0.9 + halo * 0.4;
+        alpha *= vAlpha * 1.5;
+
+        gl_FragColor = vec4(vColor * (core * 0.5 + 0.5), alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexColors: true,
+  });
+
+  points = new THREE.Points(geometry, material);
+  scene.add(points);
+}
+
+function updateParticles() {
+  if (!video.videoWidth) return;
+
+  sampleCanvas.width  = SAMPLE_W;
+  sampleCanvas.height = SAMPLE_H;
+  sampleCtx.drawImage(video, 0, 0, SAMPLE_W, SAMPLE_H);
+
+  let data;
+  try {
+    data = sampleCtx.getImageData(0, 0, SAMPLE_W, SAMPLE_H).data;
+  } catch(e) { return; }
+
+  const cols = Math.floor(SAMPLE_W / STEP);
+  const rows = Math.floor(SAMPLE_H / STEP);
+  const offX = -(SAMPLE_W / STEP) * 0.5;
+  const offY = -(SAMPLE_H / STEP) * 0.5;
+
+  let idx = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const px = col * STEP;
+      const py = row * STEP;
+      const pi = (py * SAMPLE_W + px) * 4;
+
+      const r = data[pi]     / 255;
+      const g = data[pi + 1] / 255;
+      const b = data[pi + 2] / 255;
+      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      // Discard very dark pixels (black background optimisation)
+      const threshold = 0.02;
+      const active = brightness > threshold ? 1.0 : 0.0;
+
+      positions[idx * 3]     = (col + offX) * 2.2;
+      positions[idx * 3 + 1] = -(row + offY) * 2.2;
+      positions[idx * 3 + 2] = brightness * DEPTH_SCALE * active;
+
+      colors[idx * 3]     = r * active;
+      colors[idx * 3 + 1] = g * active;
+      colors[idx * 3 + 2] = b * active;
+
+      sizes[idx] = BASE_SIZE * (0.4 + brightness * 1.6) * active;
+
+      idx++;
+    }
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+  geometry.attributes.color.needsUpdate    = true;
+  geometry.attributes.size.needsUpdate     = true;
+}
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+let frameId;
+function animate() {
+  frameId = requestAnimationFrame(animate);
+  window._orbitUpdate();
+  updateParticles();
+  renderer.render(scene, camera);
+}
+
+// ─── File upload ──────────────────────────────────────────────────────────────
+const uploadScreen = document.getElementById('upload-screen');
+const fileInput    = document.getElementById('file-input');
+const controls     = document.getElementById('controls');
+const info         = document.getElementById('info');
+const hint         = document.getElementById('hint');
+const btnPlay      = document.getElementById('btn-play');
+
+uploadScreen.addEventListener('click', () => fileInput.click());
+uploadScreen.addEventListener('dragover', e => {
+  e.preventDefault();
+  uploadScreen.style.background = 'rgba(255,255,255,0.03)';
+});
+uploadScreen.addEventListener('dragleave', () => {
+  uploadScreen.style.background = '#000';
+});
+uploadScreen.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('video/')) loadVideo(file);
+});
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadVideo(e.target.files[0]);
+});
+
+function loadVideo(file) {
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  video.play();
+
+  video.addEventListener('loadedmetadata', () => {
+    initParticles();
+    uploadScreen.classList.add('hidden');
+    setTimeout(() => {
+      controls.classList.add('visible');
+      info.classList.add('visible');
+      hint.classList.add('visible');
+    }, 300);
+
+    if (!frameId) animate();
+  }, { once: true });
+}
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+btnPlay.addEventListener('click', () => {
+  if (video.paused) { video.play(); btnPlay.textContent = '⏸'; }
+  else              { video.pause(); btnPlay.textContent = '▶'; }
+});
+
+video.addEventListener('play',  () => { btnPlay.textContent = '⏸'; });
+video.addEventListener('pause', () => { btnPlay.textContent = '▶'; });
+
+document.getElementById('slider-density').addEventListener('input', e => {
+  STEP = parseInt(e.target.value);
+  if (video.videoWidth) initParticles();
+});
+
+document.getElementById('slider-depth').addEventListener('input', e => {
+  DEPTH_SCALE = parseInt(e.target.value);
+});
+
+document.getElementById('slider-size').addEventListener('input', e => {
+  BASE_SIZE = parseFloat(e.target.value);
+});
+
+document.getElementById('btn-reset').addEventListener('click', window._resetCamera);
+
+// ─── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
