@@ -24,7 +24,7 @@
 
   #app { position:fixed; inset:0; display:none; }
   #app.visible { display:block; }
-  #threeCanvas { width:100%; height:100%; }
+  #threeCanvas { width:100%; height:100%; display:block; }
 
   #controls {
     position:fixed; bottom:0; left:0; right:0;
@@ -62,15 +62,15 @@
     <div class="i1">Particle Field</div>
     <div class="i2" id="pcount">— particles</div>
   </div>
-  <div id="hint">drag · rotate<br>scroll · zoom</div>
+  <div id="hint">drag · rotate<br>scroll · zoom<br>right drag · pan</div>
   <div id="controls">
     <button class="btn" id="btnPlay">▶</button>
     <span class="lbl">density</span>
-    <div class="sg"><input type="range" id="sDensity" min="2" max="10" value="4" step="1"></div>
+    <div class="sg"><input type="range" id="sDensity" min="1" max="6" value="2" step="1"></div>
     <span class="lbl">depth</span>
-    <div class="sg"><input type="range" id="sDepth" min="10" max="250" value="80" step="5"></div>
+    <div class="sg"><input type="range" id="sDepth" min="50" max="600" value="300" step="10"></div>
     <span class="lbl">size</span>
-    <div class="sg"><input type="range" id="sSize" min="0.5" max="5" value="2" step="0.1"></div>
+    <div class="sg"><input type="range" id="sSize" min="0.3" max="4" value="1.2" step="0.1"></div>
     <button class="btn" id="btnReset">⟳</button>
   </div>
 </div>
@@ -81,63 +81,89 @@
 <script>
 // ── renderer ──────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('threeCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-renderer.setPixelRatio(devicePixelRatio);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.setClearColor(0x000000);
 
 const scene  = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 3000);
-camera.position.z = 600;
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1, 5000);
+camera.position.z = 700;
 
 // ── orbit controls ────────────────────────────────────────────────────────────
 {
-  const s=new THREE.Spherical(), sd=new THREE.Spherical();
-  const tgt=new THREE.Vector3(), pan=new THREE.Vector3();
-  let sc=1, down=false, btn=-1;
-  const rs=new THREE.Vector2(), re=new THREE.Vector2(), rd=new THREE.Vector2();
-  const ps=new THREE.Vector2(), pe=new THREE.Vector2(), pd=new THREE.Vector2();
-  const EPS=1e-6;
-  canvas.addEventListener('contextmenu',e=>e.preventDefault());
-  canvas.addEventListener('mousedown',e=>{
-    down=true; btn=e.button;
-    if(btn===0) rs.set(e.clientX,e.clientY);
-    if(btn===2) ps.set(e.clientX,e.clientY);
+  const sph = new THREE.Spherical();
+  const sphD = new THREE.Spherical();
+  const tgt = new THREE.Vector3();
+  const panV = new THREE.Vector3();
+  let scale = 1, isDown = false, mouseBtn = -1;
+  const rS = new THREE.Vector2(), rE = new THREE.Vector2(), rD = new THREE.Vector2();
+  const pS = new THREE.Vector2(), pE = new THREE.Vector2(), pD = new THREE.Vector2();
+  const EPS = 1e-6;
+
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('mousedown', e => {
+    isDown = true; mouseBtn = e.button;
+    if (mouseBtn === 0) rS.set(e.clientX, e.clientY);
+    if (mouseBtn === 2) pS.set(e.clientX, e.clientY);
   });
-  window.addEventListener('mousemove',e=>{
-    if(!down) return;
-    if(btn===0){
-      re.set(e.clientX,e.clientY);
-      rd.subVectors(re,rs).multiplyScalar(0.005);
-      sd.theta-=rd.x; sd.phi-=rd.y;
-      rs.copy(re);
+  window.addEventListener('mousemove', e => {
+    if (!isDown) return;
+    if (mouseBtn === 0) {
+      rE.set(e.clientX, e.clientY);
+      rD.subVectors(rE, rS).multiplyScalar(0.005);
+      sphD.theta -= rD.x; sphD.phi -= rD.y;
+      rS.copy(rE);
     }
-    if(btn===2){
-      pe.set(e.clientX,e.clientY);
-      pd.subVectors(pe,ps).multiplyScalar(0.6);
-      pan.add(new THREE.Vector3(-pd.x,pd.y,0).applyQuaternion(camera.quaternion));
-      ps.copy(pe);
+    if (mouseBtn === 2) {
+      pE.set(e.clientX, e.clientY);
+      pD.subVectors(pE, pS).multiplyScalar(0.7);
+      panV.add(new THREE.Vector3(-pD.x, pD.y, 0).applyQuaternion(camera.quaternion));
+      pS.copy(pE);
     }
   });
-  window.addEventListener('mouseup',()=>down=false);
-  canvas.addEventListener('wheel',e=>{
-    sc*=e.deltaY<0?1/1.1:1.1;
-    sc=Math.max(0.05,Math.min(20,sc));
+  window.addEventListener('mouseup', () => isDown = false);
+  canvas.addEventListener('wheel', e => {
+    scale *= e.deltaY < 0 ? 1 / 1.1 : 1.1;
+    scale = Math.max(0.05, Math.min(20, scale));
   });
-  window._orbit=()=>{
-    const o=new THREE.Vector3().copy(camera.position).sub(tgt);
-    s.setFromVector3(o);
-    s.theta+=sd.theta; s.phi+=sd.phi;
-    s.phi=Math.max(EPS,Math.min(Math.PI-EPS,s.phi));
-    s.radius=Math.max(50,Math.min(2000,s.radius*sc));
-    tgt.add(pan);
-    camera.position.copy(tgt).add(new THREE.Vector3().setFromSpherical(s));
+
+  // Touch support
+  let lastTouchDist = 0;
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) { isDown = true; mouseBtn = 0; rS.set(e.touches[0].clientX, e.touches[0].clientY); }
+    if (e.touches.length === 2) { lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && isDown) {
+      rE.set(e.touches[0].clientX, e.touches[0].clientY);
+      rD.subVectors(rE, rS).multiplyScalar(0.005);
+      sphD.theta -= rD.x; sphD.phi -= rD.y;
+      rS.copy(rE);
+    }
+    if (e.touches.length === 2) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      scale *= lastTouchDist / d;
+      scale = Math.max(0.05, Math.min(20, scale));
+      lastTouchDist = d;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchend', () => isDown = false, { passive: true });
+
+  window._orbit = () => {
+    const offset = new THREE.Vector3().copy(camera.position).sub(tgt);
+    sph.setFromVector3(offset);
+    sph.theta += sphD.theta; sph.phi += sphD.phi;
+    sph.phi = Math.max(EPS, Math.min(Math.PI - EPS, sph.phi));
+    sph.radius = Math.max(80, Math.min(3000, sph.radius * scale));
+    tgt.add(panV);
+    camera.position.copy(tgt).add(new THREE.Vector3().setFromSpherical(sph));
     camera.lookAt(tgt);
-    sd.set(0,0,0); sc=1; pan.set(0,0,0);
+    sphD.set(0, 0, 0); scale = 1; panV.set(0, 0, 0);
   };
-  window._resetOrbit=()=>{
-    camera.position.set(0,0,600);
-    tgt.set(0,0,0); sd.set(0,0,0); sc=1; pan.set(0,0,0);
+  window._resetOrbit = () => {
+    camera.position.set(0, 0, 700);
+    tgt.set(0, 0, 0); sphD.set(0, 0, 0); scale = 1; panV.set(0, 0, 0);
   };
 }
 
@@ -145,80 +171,97 @@ camera.position.z = 600;
 const vid = document.getElementById('vid');
 let vidTex = null;
 
-const RT_W=320, RT_H=180;
+// Higher resolution sample for more particles
+const RT_W = 480, RT_H = 270;
 const rt = new THREE.WebGLRenderTarget(RT_W, RT_H, {
-  minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
-  format:THREE.RGBAFormat, type:THREE.UnsignedByteType,
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  format: THREE.RGBAFormat,
+  type: THREE.UnsignedByteType,
 });
 const rtScene  = new THREE.Scene();
-const rtCamera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
-const quadMat  = new THREE.MeshBasicMaterial({ side:THREE.DoubleSide });
-const quadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2,2), quadMat);
-rtScene.add(quadMesh);
+const rtCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadMat  = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+rtScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), quadMat));
 const pixelBuf = new Uint8Array(RT_W * RT_H * 4);
 
-// ── particles ─────────────────────────────────────────────────────────────────
-let geo, pts, pos, aCol, sz;
-let STEP=4, DEPTH=80, PSIZE=2;
-
-// KEY FIX: attribute named 'aColor' instead of 'color' to avoid Three.js conflict
+// ── shaders — uses 'aColor' NOT 'color' to avoid Three.js attribute conflict ──
 const vertexShader = `
-  attribute float size;
+  attribute float aSize;
   attribute vec3 aColor;
+  attribute float aDepthJitter;
   varying vec3 vCol;
   varying float vBright;
-  void main(){
+  void main() {
     vCol    = aColor;
     vBright = dot(aColor, vec3(0.299, 0.587, 0.114));
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = size * (350.0 / -mv.z);
+
+    // Add slight jitter on Z for sub-pixel depth variation
+    vec3 p = position;
+    p.z += aDepthJitter * vBright * 20.0;
+
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_PointSize = aSize * (400.0 / -mv.z);
     gl_Position  = projectionMatrix * mv;
   }
 `;
 const fragmentShader = `
   varying vec3 vCol;
   varying float vBright;
-  void main(){
+  void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
-    if(d > 0.5) discard;
-    float core = 1.0 - smoothstep(0.0,  0.22, d);
-    float halo = 1.0 - smoothstep(0.1,  0.5,  d);
-    float a    = (core * 0.95 + halo * 0.35) * min(vBright * 2.2, 1.0);
-    gl_FragColor = vec4(vCol * (core * 0.6 + 0.4), a);
+    if (d > 0.5) discard;
+    float core = 1.0 - smoothstep(0.0, 0.20, d);
+    float mid  = 1.0 - smoothstep(0.1, 0.38, d);
+    float halo = 1.0 - smoothstep(0.2, 0.50, d);
+    float a = (core * 1.0 + mid * 0.5 + halo * 0.2) * min(vBright * 2.5, 1.0);
+    vec3  c = vCol * (core * 0.7 + 0.3) + vec3(core * 0.15); // slight white core
+    gl_FragColor = vec4(c, a);
   }
 `;
 
-function buildParticles(){
-  const cols=Math.floor(RT_W/STEP);
-  const rows=Math.floor(RT_H/STEP);
-  const n=cols*rows;
-  document.getElementById('pcount').textContent=n.toLocaleString()+' particles';
+// ── particles ─────────────────────────────────────────────────────────────────
+let geo, pts, bufPos, bufCol, bufSize, bufJitter;
+let STEP = 2, DEPTH = 300, PSIZE = 1.2;
 
-  if(geo){ geo.dispose(); }
-  if(pts){ scene.remove(pts); }
+function buildParticles() {
+  const cols = Math.floor(RT_W / STEP);
+  const rows = Math.floor(RT_H / STEP);
+  const n    = cols * rows;
+  document.getElementById('pcount').textContent = n.toLocaleString() + ' particles';
 
-  geo  = new THREE.BufferGeometry();
-  pos  = new Float32Array(n*3);
-  aCol = new Float32Array(n*3);
-  sz   = new Float32Array(n);
+  if (geo) geo.dispose();
+  if (pts) scene.remove(pts);
 
-  geo.setAttribute('position', new THREE.BufferAttribute(pos,  3));
-  geo.setAttribute('aColor',   new THREE.BufferAttribute(aCol, 3)); // 'aColor' not 'color'
-  geo.setAttribute('size',     new THREE.BufferAttribute(sz,   1));
+  geo      = new THREE.BufferGeometry();
+  bufPos   = new Float32Array(n * 3);
+  bufCol   = new Float32Array(n * 3);
+  bufSize  = new Float32Array(n);
+  bufJitter = new Float32Array(n);
+
+  // Pre-fill depth jitter (random per particle, static)
+  for (let i = 0; i < n; i++) bufJitter[i] = (Math.random() - 0.5) * 2.0;
+
+  geo.setAttribute('position',    new THREE.BufferAttribute(bufPos,    3));
+  geo.setAttribute('aColor',      new THREE.BufferAttribute(bufCol,    3));
+  geo.setAttribute('aSize',       new THREE.BufferAttribute(bufSize,   1));
+  geo.setAttribute('aDepthJitter',new THREE.BufferAttribute(bufJitter, 1));
 
   const mat = new THREE.ShaderMaterial({
-    vertexShader, fragmentShader,
-    transparent:true, depthWrite:false,
-    blending:THREE.AdditiveBlending,
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
   });
 
   pts = new THREE.Points(geo, mat);
   scene.add(pts);
 }
 
-function sample(){
-  if(!vidTex || vid.readyState < 2) return;
+function sample() {
+  if (!vidTex || vid.readyState < 2) return;
 
   vidTex.needsUpdate = true;
   quadMat.map = vidTex;
@@ -229,44 +272,55 @@ function sample(){
 
   renderer.readRenderTargetPixels(rt, 0, 0, RT_W, RT_H, pixelBuf);
 
-  const cols=Math.floor(RT_W/STEP);
-  const rows=Math.floor(RT_H/STEP);
-  const ox=-cols*0.5, oy=-rows*0.5;
+  const cols = Math.floor(RT_W / STEP);
+  const rows = Math.floor(RT_H / STEP);
+  const ox = -cols * 0.5;
+  const oy = -rows * 0.5;
 
-  let idx=0;
-  for(let row=0; row<rows; row++){
-    for(let c=0; c<cols; c++){
+  // Pixel spacing in world units — keep aspect ratio
+  const spacingX = 2.0;
+  const spacingY = 2.0;
+
+  let idx = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let c = 0; c < cols; c++) {
       const px = c * STEP;
-      const py = RT_H - 1 - row * STEP; // WebGL is bottom-up
+      const py = RT_H - 1 - row * STEP; // flip Y
       const pi = (py * RT_W + px) * 4;
 
-      const r  = pixelBuf[pi]   / 255;
-      const g  = pixelBuf[pi+1] / 255;
-      const b  = pixelBuf[pi+2] / 255;
-      const br = 0.299*r + 0.587*g + 0.114*b;
-      const on = br > 0.015 ? 1 : 0;
+      const r  = pixelBuf[pi]     / 255;
+      const g  = pixelBuf[pi + 1] / 255;
+      const b  = pixelBuf[pi + 2] / 255;
+      const br = 0.299 * r + 0.587 * g + 0.114 * b;
 
-      pos[idx*3]   = (c+ox) * 2.3;
-      pos[idx*3+1] = -(row+oy) * 2.3;
-      pos[idx*3+2] = br * DEPTH * on;
+      // Discard near-black pixels entirely (invisible anyway, saves GPU)
+      const on = br > 0.018 ? 1.0 : 0.0;
 
-      aCol[idx*3]   = r * on;
-      aCol[idx*3+1] = g * on;
-      aCol[idx*3+2] = b * on;
+      bufPos[idx * 3]     = (c + ox) * spacingX;
+      bufPos[idx * 3 + 1] = (row + oy) * spacingY;
+      // Depth: bright pixels pop forward (toward camera), dark fall back
+      // Exponential curve for stronger 3D pop
+      bufPos[idx * 3 + 2] = Math.pow(br, 0.7) * DEPTH * on;
 
-      sz[idx] = PSIZE * (0.3 + br * 1.7) * on;
+      bufCol[idx * 3]     = r * on;
+      bufCol[idx * 3 + 1] = g * on;
+      bufCol[idx * 3 + 2] = b * on;
+
+      // Brighter pixels get slightly larger dots
+      bufSize[idx] = PSIZE * (0.5 + br * 1.5) * on;
+
       idx++;
     }
   }
 
   geo.attributes.position.needsUpdate = true;
   geo.attributes.aColor.needsUpdate   = true;
-  geo.attributes.size.needsUpdate     = true;
+  geo.attributes.aSize.needsUpdate    = true;
 }
 
 // ── animate ───────────────────────────────────────────────────────────────────
-(function animate(){
-  requestAnimationFrame(animate);
+(function loop() {
+  requestAnimationFrame(loop);
   window._orbit();
   sample();
   renderer.render(scene, camera);
@@ -278,25 +332,25 @@ const fi   = document.getElementById('file-input');
 const app  = document.getElementById('app');
 const btnP = document.getElementById('btnPlay');
 
-up.addEventListener('click', ()=>fi.click());
-up.addEventListener('dragover', e=>{ e.preventDefault(); up.style.background='rgba(255,255,255,0.02)'; });
-up.addEventListener('dragleave', ()=>up.style.background='#000');
-up.addEventListener('drop', e=>{
+up.addEventListener('click', () => fi.click());
+up.addEventListener('dragover',  e => { e.preventDefault(); up.style.background = 'rgba(255,255,255,0.02)'; });
+up.addEventListener('dragleave', () => up.style.background = '#000');
+up.addEventListener('drop', e => {
   e.preventDefault();
-  const f=e.dataTransfer.files[0];
-  if(f && f.type.startsWith('video/')) load(f);
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('video/')) load(f);
 });
-fi.addEventListener('change', e=>{ if(e.target.files[0]) load(e.target.files[0]); });
+fi.addEventListener('change', e => { if (e.target.files[0]) load(e.target.files[0]); });
 
-function load(file){
-  if(vid.src) URL.revokeObjectURL(vid.src);
+function load(file) {
+  if (vid.src) URL.revokeObjectURL(vid.src);
   vid.removeAttribute('crossorigin');
   vid.src = URL.createObjectURL(file);
 
-  vid.addEventListener('canplay', ()=>{
-    vid.play().catch(()=>{});
+  vid.addEventListener('canplay', () => {
+    vid.play().catch(() => {});
 
-    if(vidTex) vidTex.dispose();
+    if (vidTex) vidTex.dispose();
     vidTex = new THREE.VideoTexture(vid);
     vidTex.minFilter = THREE.LinearFilter;
     vidTex.magFilter = THREE.LinearFilter;
@@ -305,27 +359,28 @@ function load(file){
     buildParticles();
     up.classList.add('hidden');
     app.classList.add('visible');
-  }, { once:true });
+  }, { once: true });
 
   vid.load();
 }
 
 // ── controls ──────────────────────────────────────────────────────────────────
-btnP.addEventListener('click', ()=>{ if(vid.paused) vid.play(); else vid.pause(); });
-vid.addEventListener('play',  ()=>btnP.textContent='⏸');
-vid.addEventListener('pause', ()=>btnP.textContent='▶');
+btnP.addEventListener('click', () => { if (vid.paused) vid.play(); else vid.pause(); });
+vid.addEventListener('play',  () => btnP.textContent = '⏸');
+vid.addEventListener('pause', () => btnP.textContent = '▶');
 
-document.getElementById('sDensity').addEventListener('input', e=>{
-  STEP=parseInt(e.target.value); if(vid.videoWidth) buildParticles();
+document.getElementById('sDensity').addEventListener('input', e => {
+  STEP = parseInt(e.target.value);
+  if (vid.videoWidth) buildParticles();
 });
-document.getElementById('sDepth').addEventListener('input', e=>DEPTH=parseInt(e.target.value));
-document.getElementById('sSize').addEventListener('input',  e=>PSIZE=parseFloat(e.target.value));
+document.getElementById('sDepth').addEventListener('input', e => DEPTH = parseInt(e.target.value));
+document.getElementById('sSize').addEventListener('input',  e => PSIZE = parseFloat(e.target.value));
 document.getElementById('btnReset').addEventListener('click', window._resetOrbit);
 
-window.addEventListener('resize', ()=>{
-  camera.aspect=innerWidth/innerHeight;
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>
