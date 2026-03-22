@@ -14,14 +14,8 @@
     background:#000; z-index:100; cursor:pointer; transition:opacity 0.6s;
   }
   #upload-screen.hidden { opacity:0; pointer-events:none; }
-
-  .box {
-    border:1px solid rgba(255,255,255,0.2);
-    padding:60px 80px; text-align:center;
-    transition:border-color 0.3s;
-  }
+  .box { border:1px solid rgba(255,255,255,0.2); padding:60px 80px; text-align:center; transition:border-color 0.3s; }
   #upload-screen:hover .box { border-color:rgba(255,255,255,0.5); }
-
   .t1 { font-size:11px; letter-spacing:0.4em; color:rgba(255,255,255,0.3); margin-bottom:28px; text-transform:uppercase; }
   .ic { font-size:44px; margin-bottom:20px; opacity:0.5; }
   .t2 { font-size:20px; font-weight:300; letter-spacing:0.1em; margin-bottom:10px; }
@@ -30,43 +24,24 @@
 
   #app { position:fixed; inset:0; display:none; }
   #app.visible { display:block; }
-
   #threeCanvas { width:100%; height:100%; }
 
   #controls {
     position:fixed; bottom:0; left:0; right:0;
     padding:18px 28px; display:flex; align-items:center; gap:20px;
-    background:linear-gradient(transparent,rgba(0,0,0,0.85));
-    z-index:10;
+    background:linear-gradient(transparent,rgba(0,0,0,0.85)); z-index:10;
   }
-  .btn {
-    background:none; border:1px solid rgba(255,255,255,0.25); color:#fff;
-    width:34px; height:34px; cursor:pointer; font-size:13px;
-    display:flex; align-items:center; justify-content:center; flex-shrink:0;
-    transition:border-color 0.2s;
-  }
+  .btn { background:none; border:1px solid rgba(255,255,255,0.25); color:#fff; width:34px; height:34px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:border-color 0.2s; }
   .btn:hover { border-color:rgba(255,255,255,0.6); }
   .lbl { font-size:10px; letter-spacing:0.3em; color:rgba(255,255,255,0.3); text-transform:uppercase; white-space:nowrap; }
   .sg { display:flex; align-items:center; gap:8px; flex:1; }
-  input[type=range] {
-    -webkit-appearance:none; height:1px; background:rgba(255,255,255,0.25);
-    outline:none; flex:1; cursor:pointer;
-  }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance:none; width:9px; height:9px; background:#fff; border-radius:50%;
-  }
+  input[type=range] { -webkit-appearance:none; height:1px; background:rgba(255,255,255,0.25); outline:none; flex:1; cursor:pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:9px; height:9px; background:#fff; border-radius:50%; }
 
-  #info {
-    position:fixed; top:22px; left:28px; pointer-events:none; z-index:10;
-  }
+  #info { position:fixed; top:22px; left:28px; pointer-events:none; z-index:10; }
   .i1 { font-size:10px; letter-spacing:0.4em; color:rgba(255,255,255,0.2); text-transform:uppercase; margin-bottom:4px; }
   .i2 { font-size:11px; letter-spacing:0.15em; color:rgba(255,255,255,0.35); }
-
-  #hint {
-    position:fixed; top:22px; right:28px; font-size:10px;
-    letter-spacing:0.2em; color:rgba(255,255,255,0.15);
-    pointer-events:none; z-index:10; text-align:right; line-height:2.2;
-  }
+  #hint { position:fixed; top:22px; right:28px; font-size:10px; letter-spacing:0.2em; color:rgba(255,255,255,0.15); pointer-events:none; z-index:10; text-align:right; line-height:2.2; }
 </style>
 </head>
 <body>
@@ -115,7 +90,7 @@ const scene  = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 3000);
 camera.position.z = 600;
 
-// ── orbit ─────────────────────────────────────────────────────────────────────
+// ── orbit controls ────────────────────────────────────────────────────────────
 {
   const s=new THREE.Spherical(), sd=new THREE.Spherical();
   const tgt=new THREE.Vector3(), pan=new THREE.Vector3();
@@ -166,29 +141,53 @@ camera.position.z = 600;
   };
 }
 
-// ── GPU video sampling setup ──────────────────────────────────────────────────
+// ── GPU video sampling ────────────────────────────────────────────────────────
 const vid = document.getElementById('vid');
 let vidTex = null;
 
 const RT_W=320, RT_H=180;
 const rt = new THREE.WebGLRenderTarget(RT_W, RT_H, {
-  minFilter: THREE.LinearFilter,
-  magFilter: THREE.LinearFilter,
-  format: THREE.RGBAFormat,
-  type: THREE.UnsignedByteType,
+  minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
+  format:THREE.RGBAFormat, type:THREE.UnsignedByteType,
 });
-
 const rtScene  = new THREE.Scene();
 const rtCamera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
-const quadMat  = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+const quadMat  = new THREE.MeshBasicMaterial({ side:THREE.DoubleSide });
 const quadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2,2), quadMat);
 rtScene.add(quadMesh);
-
 const pixelBuf = new Uint8Array(RT_W * RT_H * 4);
 
 // ── particles ─────────────────────────────────────────────────────────────────
-let geo, pts, pos, col, sz;
+let geo, pts, pos, aCol, sz;
 let STEP=4, DEPTH=80, PSIZE=2;
+
+// KEY FIX: attribute named 'aColor' instead of 'color' to avoid Three.js conflict
+const vertexShader = `
+  attribute float size;
+  attribute vec3 aColor;
+  varying vec3 vCol;
+  varying float vBright;
+  void main(){
+    vCol    = aColor;
+    vBright = dot(aColor, vec3(0.299, 0.587, 0.114));
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = size * (350.0 / -mv.z);
+    gl_Position  = projectionMatrix * mv;
+  }
+`;
+const fragmentShader = `
+  varying vec3 vCol;
+  varying float vBright;
+  void main(){
+    vec2 uv = gl_PointCoord - 0.5;
+    float d = length(uv);
+    if(d > 0.5) discard;
+    float core = 1.0 - smoothstep(0.0,  0.22, d);
+    float halo = 1.0 - smoothstep(0.1,  0.5,  d);
+    float a    = (core * 0.95 + halo * 0.35) * min(vBright * 2.2, 1.0);
+    gl_FragColor = vec4(vCol * (core * 0.6 + 0.4), a);
+  }
+`;
 
 function buildParticles(){
   const cols=Math.floor(RT_W/STEP);
@@ -196,94 +195,73 @@ function buildParticles(){
   const n=cols*rows;
   document.getElementById('pcount').textContent=n.toLocaleString()+' particles';
 
-  if(geo) geo.dispose();
-  if(pts) scene.remove(pts);
+  if(geo){ geo.dispose(); }
+  if(pts){ scene.remove(pts); }
 
-  geo=new THREE.BufferGeometry();
-  pos=new Float32Array(n*3);
-  col=new Float32Array(n*3);
-  sz =new Float32Array(n);
-  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('color',   new THREE.BufferAttribute(col,3));
-  geo.setAttribute('size',    new THREE.BufferAttribute(sz,1));
+  geo  = new THREE.BufferGeometry();
+  pos  = new Float32Array(n*3);
+  aCol = new Float32Array(n*3);
+  sz   = new Float32Array(n);
 
-  const mat=new THREE.ShaderMaterial({
-    vertexShader:`
-      attribute float size;
-      attribute vec3 color;
-      varying vec3 vC;
-      varying float vB;
-      void main(){
-        vC=color;
-        vB=dot(color,vec3(0.299,0.587,0.114));
-        vec4 mv=modelViewMatrix*vec4(position,1.0);
-        gl_PointSize=size*(350.0/-mv.z);
-        gl_Position=projectionMatrix*mv;
-      }
-    `,
-    fragmentShader:`
-      varying vec3 vC;
-      varying float vB;
-      void main(){
-        vec2 uv=gl_PointCoord-0.5;
-        float d=length(uv);
-        if(d>0.5)discard;
-        float core=1.0-smoothstep(0.0,0.22,d);
-        float halo=1.0-smoothstep(0.1,0.5,d);
-        float a=(core*0.95+halo*0.35)*min(vB*2.2,1.0);
-        gl_FragColor=vec4(vC*(core*0.6+0.4),a);
-      }
-    `,
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,  3));
+  geo.setAttribute('aColor',   new THREE.BufferAttribute(aCol, 3)); // 'aColor' not 'color'
+  geo.setAttribute('size',     new THREE.BufferAttribute(sz,   1));
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader, fragmentShader,
     transparent:true, depthWrite:false,
-    blending:THREE.AdditiveBlending, vertexColors:true,
+    blending:THREE.AdditiveBlending,
   });
 
-  pts=new THREE.Points(geo,mat);
+  pts = new THREE.Points(geo, mat);
   scene.add(pts);
 }
 
 function sample(){
-  if(!vidTex || vid.readyState<2) return;
+  if(!vidTex || vid.readyState < 2) return;
 
-  vidTex.needsUpdate=true;
-  quadMat.map=vidTex;
+  vidTex.needsUpdate = true;
+  quadMat.map = vidTex;
 
   renderer.setRenderTarget(rt);
-  renderer.render(rtScene,rtCamera);
+  renderer.render(rtScene, rtCamera);
   renderer.setRenderTarget(null);
 
-  renderer.readRenderTargetPixels(rt,0,0,RT_W,RT_H,pixelBuf);
+  renderer.readRenderTargetPixels(rt, 0, 0, RT_W, RT_H, pixelBuf);
 
   const cols=Math.floor(RT_W/STEP);
   const rows=Math.floor(RT_H/STEP);
   const ox=-cols*0.5, oy=-rows*0.5;
 
   let idx=0;
-  for(let row=0;row<rows;row++){
-    for(let c=0;c<cols;c++){
-      const px=c*STEP;
-      const py=RT_H-1-row*STEP; // flip Y (WebGL is bottom-up)
-      const pi=(py*RT_W+px)*4;
-      const r=pixelBuf[pi]/255;
-      const g=pixelBuf[pi+1]/255;
-      const b=pixelBuf[pi+2]/255;
-      const br=0.299*r+0.587*g+0.114*b;
-      const on=br>0.015?1:0;
+  for(let row=0; row<rows; row++){
+    for(let c=0; c<cols; c++){
+      const px = c * STEP;
+      const py = RT_H - 1 - row * STEP; // WebGL is bottom-up
+      const pi = (py * RT_W + px) * 4;
 
-      pos[idx*3]  =(c+ox)*2.3;
-      pos[idx*3+1]=-(row+oy)*2.3;
-      pos[idx*3+2]=br*DEPTH*on;
-      col[idx*3]  =r*on;
-      col[idx*3+1]=g*on;
-      col[idx*3+2]=b*on;
-      sz[idx]=PSIZE*(0.3+br*1.7)*on;
+      const r  = pixelBuf[pi]   / 255;
+      const g  = pixelBuf[pi+1] / 255;
+      const b  = pixelBuf[pi+2] / 255;
+      const br = 0.299*r + 0.587*g + 0.114*b;
+      const on = br > 0.015 ? 1 : 0;
+
+      pos[idx*3]   = (c+ox) * 2.3;
+      pos[idx*3+1] = -(row+oy) * 2.3;
+      pos[idx*3+2] = br * DEPTH * on;
+
+      aCol[idx*3]   = r * on;
+      aCol[idx*3+1] = g * on;
+      aCol[idx*3+2] = b * on;
+
+      sz[idx] = PSIZE * (0.3 + br * 1.7) * on;
       idx++;
     }
   }
 
-  geo.attributes.position.needsUpdate=true;
-  geo.attributes.color.needsUpdate=true;
-  geo.attributes.size.needsUpdate=true;
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.aColor.needsUpdate   = true;
+  geo.attributes.size.needsUpdate     = true;
 }
 
 // ── animate ───────────────────────────────────────────────────────────────────
@@ -291,59 +269,60 @@ function sample(){
   requestAnimationFrame(animate);
   window._orbit();
   sample();
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 })();
 
-// ── load video ────────────────────────────────────────────────────────────────
+// ── file load ─────────────────────────────────────────────────────────────────
 const up   = document.getElementById('upload-screen');
 const fi   = document.getElementById('file-input');
 const app  = document.getElementById('app');
 const btnP = document.getElementById('btnPlay');
 
-up.addEventListener('click',()=>fi.click());
-up.addEventListener('dragover',e=>{e.preventDefault();up.style.background='rgba(255,255,255,0.02)';});
-up.addEventListener('dragleave',()=>up.style.background='#000');
-up.addEventListener('drop',e=>{
+up.addEventListener('click', ()=>fi.click());
+up.addEventListener('dragover', e=>{ e.preventDefault(); up.style.background='rgba(255,255,255,0.02)'; });
+up.addEventListener('dragleave', ()=>up.style.background='#000');
+up.addEventListener('drop', e=>{
   e.preventDefault();
   const f=e.dataTransfer.files[0];
-  if(f&&f.type.startsWith('video/')) load(f);
+  if(f && f.type.startsWith('video/')) load(f);
 });
-fi.addEventListener('change',e=>{if(e.target.files[0])load(e.target.files[0]);});
+fi.addEventListener('change', e=>{ if(e.target.files[0]) load(e.target.files[0]); });
 
 function load(file){
   if(vid.src) URL.revokeObjectURL(vid.src);
   vid.removeAttribute('crossorigin');
-  vid.src=URL.createObjectURL(file);
+  vid.src = URL.createObjectURL(file);
 
-  vid.addEventListener('canplay',()=>{
+  vid.addEventListener('canplay', ()=>{
     vid.play().catch(()=>{});
 
     if(vidTex) vidTex.dispose();
-    vidTex=new THREE.VideoTexture(vid);
-    vidTex.minFilter=THREE.LinearFilter;
-    vidTex.magFilter=THREE.LinearFilter;
-    vidTex.format=THREE.RGBFormat;
+    vidTex = new THREE.VideoTexture(vid);
+    vidTex.minFilter = THREE.LinearFilter;
+    vidTex.magFilter = THREE.LinearFilter;
+    vidTex.format    = THREE.RGBFormat;
 
     buildParticles();
     up.classList.add('hidden');
     app.classList.add('visible');
-  },{once:true});
+  }, { once:true });
 
   vid.load();
 }
 
 // ── controls ──────────────────────────────────────────────────────────────────
-btnP.addEventListener('click',()=>{ if(vid.paused)vid.play();else vid.pause(); });
-vid.addEventListener('play', ()=>btnP.textContent='⏸');
-vid.addEventListener('pause',()=>btnP.textContent='▶');
-document.getElementById('sDensity').addEventListener('input',e=>{
-  STEP=parseInt(e.target.value); if(vid.videoWidth)buildParticles();
-});
-document.getElementById('sDepth').addEventListener('input',e=>DEPTH=parseInt(e.target.value));
-document.getElementById('sSize').addEventListener('input',e=>PSIZE=parseFloat(e.target.value));
-document.getElementById('btnReset').addEventListener('click',window._resetOrbit);
+btnP.addEventListener('click', ()=>{ if(vid.paused) vid.play(); else vid.pause(); });
+vid.addEventListener('play',  ()=>btnP.textContent='⏸');
+vid.addEventListener('pause', ()=>btnP.textContent='▶');
 
-window.addEventListener('resize',()=>{
+document.getElementById('sDensity').addEventListener('input', e=>{
+  STEP=parseInt(e.target.value); if(vid.videoWidth) buildParticles();
+});
+document.getElementById('sDepth').addEventListener('input', e=>DEPTH=parseInt(e.target.value));
+document.getElementById('sSize').addEventListener('input',  e=>PSIZE=parseFloat(e.target.value));
+document.getElementById('btnReset').addEventListener('click', window._resetOrbit);
+
+window.addEventListener('resize', ()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
